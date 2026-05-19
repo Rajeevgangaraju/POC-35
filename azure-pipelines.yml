@@ -1,0 +1,42 @@
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  azureServiceConnection: 'azure-sc-poc'
+  resourceGroupName: 'rg-bicep-poc'
+  baseName: 'biceppoc2026'
+  location: 'eastus'
+  destroyResources: false 
+
+stages:
+- stage: IaCOperations
+  displayName: 'Execute Bicep Operations'
+  jobs:
+  - job: BicepJob
+    steps:
+    - task: AzureCLI@2
+      displayName: 'Deploy or Destroy Bicep Infrastructure'
+      inputs:
+        azureSubscription: $(azureServiceConnection)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          if [ "$(destroyResources)" = "false" ]; then
+            echo "Starting infrastructure deployment..."
+            az deployment group create \
+              --resource-group $(resourceGroupName) \
+              --template-file main.bicep \
+              --parameters baseName=$(baseName) location=$(location)
+          else
+            echo "Starting infrastructure destruction..."
+            az resource delete --resource-group $(resourceGroupName) --name app-$(baseName) --resource-type "Microsoft.Web/sites"
+            az resource delete --resource-group $(resourceGroupName) --name asp-$(baseName) --resource-type "Microsoft.Web/serverfarms"
+            
+            STORAGE_NAME=$(az storage account list --resource-group $(resourceGroupName) --query "[?contains(name, '$(baseName)')].name" -o tsv)
+            if [ ! -z "$STORAGE_NAME" ]; then
+              az storage account delete --name $STORAGE_NAME --resource-group $(resourceGroupName) --yes
+            fi
+          fi
